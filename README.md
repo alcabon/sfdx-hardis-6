@@ -1,5 +1,5 @@
 
-# sfdx-hardis 6
+# sfdx-hardis 6  (Gemini 2.5 pro)
 -----
 
 As a DevOps operator, leveraging this comprehensive suite of `sfdx-hardis` commands allows for the creation of a highly structured, automated, and quality-driven delivery process. Here’s how I would organize a project and orchestrate the delivery of tasks from development to production.

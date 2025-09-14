@@ -338,3 +338,37 @@ Beyond just enabling rollbacks, a truly effective Git strategy focuses on qualit
 * **Tag Releases**. Every time a version of the code is deployed to production, it should be tagged in Git with a version number (e.g., `v1.2.3`). This creates a permanent, easy-to-find reference point in your repository's history that corresponds to a specific production release.
 
 ----
+
+Exactly, that's a crystal-clear and insightful conclusion.
+
+**Yes, for metadata artifacts, a disciplined Git strategy with atomic commits absolutely allows you to achieve the same *outcome* as an artifact-level rollback in Gearset.**
+
+Your example is perfect. If a developer's feature branch has three separate commits:
+1.  `feat: Add Apex Class for Invoice Service`
+2.  `feat: Add LWC to Display Invoices`
+3.  `feat: Add Test Class for Invoice Service`
+
+And after merging, you discover a critical bug only in the LWC, you can run `git revert` on the specific hash for the second commit. This will create a new commit that surgically removes the LWC, leaving the Apex class and its test class untouched. This is the very definition of an artifact-level rollback.
+
+***
+### The Crucial Caveat: "All the Rollback Features"
+
+However, while you can reproduce the *metadata artifact* rollback capability, Gearset's "one hundred verifications" and rollback model cover a few areas that a pure Git-based strategy does not. The key is your final parenthetical: "(given that the source of truth, here git is 100% reliable)".
+
+A strict Git policy is sufficient for what is *in Git*. Gearset's extra value comes from its awareness of what might be *outside of Git*.
+
+Here’s where the approaches differ:
+
+* **Data Deployments**: The `sfdx-hardis` and Git revert strategy is for metadata files. Gearset has a robust data deployment engine that also supports data rollbacks. If a deployment includes inserting or updating records (like Custom Metadata Types, CPQ Products, etc.), a `git revert` won't undo those data changes in the org. Gearset's rollback feature is designed to handle this.
+* **Handling "Hotfixes" and Org Drift**: This is the most significant difference. Imagine a feature is deployed. A critical issue is found, and an admin logs into production to make an urgent manual change to a Flow to fix it. This manual change is **not in Git**.
+    * **Gearset's rollback** would see this manual change. When it compares the current org state to the pre-deployment snapshot, it will correctly identify how to revert the *original* deployment while accounting for the subsequent manual fix.
+    * The **`git revert` strategy** is blind to the manual hotfix. It will simply revert the original feature commit, potentially overwriting and undoing the admin's urgent fix.
+
+***
+### Conclusion
+
+You are correct. A disciplined Git strategy, enforced by a framework like `sfdx-hardis`, gives you the power to perform precise, artifact-level rollbacks for all of your **version-controlled metadata**. From an auditability and source-of-truth perspective, this is arguably a superior and more robust approach.
+
+Gearset's unique value proposition lies in its safety net for operations that happen **outside of a pure Git workflow**, like complex data rollbacks and reverting changes on orgs where manual hotfixes might have occurred.
+
+----

@@ -124,3 +124,34 @@ To prevent technical debt and ensure long-term project health, a tech lead or a 
   * **Security Audits:** Run `sf hardis:project:audit:callincallout` and `sf hardis:project:audit:remotesites` quarterly to review all external integration points.
   * **Technical Debt Management:** Run `sf hardis:project:audit:apiversion --fix` after every Salesforce release to keep the codebase modern. Run `sf hardis:lint:unusedmetadatas` to identify and remove dead code.
   * **Best Practice Enforcement:** For mature projects, `sf hardis:project:convert:profilestopermsets` can be used to facilitate the move to a more modern, Permission Set-based security model.
+
+-----
+
+The `sfdx-hardis` suite provides a powerful, multi-layered approach to verifying the coherence of packages and preventing "missing artifact" errors. It addresses this crucial need in three distinct ways:
+
+### ## Proactive Coherence via Automated Manifest Generation
+
+This is the most powerful method because it **prevents errors before they happen**.
+
+The core of this strategy is the `sf hardis:work:save` command. Instead of relying on a developer to manually update the `package.xml`, this command uses the `sfdx-git-delta` plugin to analyze the Git history. It automatically generates a `package.xml` and `destructiveChanges.xml` that perfectly match all the files that were added, modified, or deleted in the branch.
+
+This ensures **perfect coherence** between the source files being committed and the manifest that describes them, virtually eliminating the common error of forgetting to add a new component to the package.
+
+***
+### ## Specific Auditing for Missing Permissions
+
+This method actively **hunts for a common type of missing artifact**: permissions.
+
+The `sf hardis:lint:access` command is a specialized audit tool that scans your project to ensure every Apex Class and Custom Field is referenced in at least one Profile or Permission Set. This directly addresses the "missing artifact" problem where a new field or class is created but no one is given access to it, which would otherwise only be caught during testing or in production.
+
+***
+### ## Ultimate Verification via Deployment Simulation
+
+This is the final and most comprehensive check, using the **Salesforce platform itself as the source of truth**.
+
+Commands like `sf hardis:project:deploy:smart --check` or `sf hardis:project:deploy:validate` perform a deployment simulation against a target org. The Salesforce platform's own dependency checker will run and fail if *any* dependent artifact is missing (e.g., a Custom Field referenced in a Layout is not included). The `sfdx-hardis` wrappers enhance this by providing clearer error messages and helpful tips to resolve these dependency issues quickly.
+
+In summary, `sfdx-hardis` provides a robust strategy for package coherence by:
+1.  **Preventing** missing artifacts by automatically generating manifests (`work:save`).
+2.  **Auditing** for specific, common omissions like permissions (`lint:access`).
+3.  **Verifying** the complete package against the ultimate authority—the Salesforce org itself (`deploy:smart --check`).

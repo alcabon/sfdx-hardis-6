@@ -314,3 +314,27 @@ Gearset’s rollback feature is essentially a reverse deployment. It's a powerfu
 | **Handles Hotfixes?** | **Yes.** It compares the *current* live state, so it will correctly handle any manual changes made since the original deployment. | **No.** It only knows about what's in Git. Manual org changes are invisible to this process. |
 
 ---
+
+For a `git revert` strategy to be effective and safe at the feature level, imposing a few key disciplines on developers is absolutely crucial.
+
+### Key Disciplines for an Effective `git revert` Strategy
+
+You've already identified the most important rule. Here it is, along with a few others that are equally critical for a clean rollback capability.
+
+* **One Feature, One Branch, One Merge Commit**. This is the golden rule. Each new feature or significant bug fix must be developed in its own isolated feature branch. When the work is complete, it is merged into the main development branch (e.g., `integration` or `main`) through a single, well-defined Merge/Pull Request. This creates a single merge commit that encapsulates the entire feature. Reverting this one commit is then all that's needed to roll back the entire feature.
+* **Atomic Commits within the Feature Branch**. While the feature branch is being developed, developers should be encouraged to make small, logical, "atomic" commits. For example, "Add Apex Class for Invoice Service," then "Add LWC to Display Invoices," then "Add Test Class for Invoice Service." This makes the history of the feature itself easy to review and, if necessary, allows for a surgical `git revert` of a specific part of the feature *before* it's merged.
+* **Clear and Standardized Commit Messages**. A commit message like "stuff" is useless. A message like "feat(Billing): Add Apex class for credit card processing - PROJ-123" is invaluable. When a release manager needs to find the exact merge commit to revert a feature that's causing issues in production, a clear and searchable commit history is essential.
+* **Never Re-write Main Branch History**. Developers must understand that branches like `main`, `uat`, or `integration` are sacred. Force-pushing (`git push --force`) or rebasing on these shared branches is strictly forbidden. A rollback must *always* be done with `git revert`, which creates a *new* commit that undoes the previous changes, preserving the project's history. 
+
+### Other Crucial Points for a Clean & Smart Git Strategy
+
+Beyond just enabling rollbacks, a truly effective Git strategy focuses on quality, clarity, and automation.
+
+* **A Consistent Branching Model**. Adopt a standard model like **GitFlow** or a simpler trunk-based model. Everyone on the team must understand the purpose of each branch (e.g., `feature/*`, `develop`, `release/*`, `main`, `hotfix/*`). This brings order and predictability to the development process.
+* **Mandatory Merge/Pull Requests (PRs)**. No code should ever be committed directly to a main branch. Every feature must go through a PR, which acts as a crucial quality gate for:
+    * **Code Review:** At least one other developer must review the code for quality, correctness, and adherence to standards.
+    * **Automated Checks (CI):** The PR should automatically trigger a CI pipeline that runs linters (`sf hardis:project:lint`), validates the deployment against a real org (`sf hardis:project:deploy:smart --check`), and runs Apex tests. A PR should be physically un-mergeable until these checks pass.
+* **Squash Commits on Merge**. To keep the history of the main branch clean and easy to read, configure your Git provider (GitHub, GitLab, etc.) to "squash and merge." This collapses all of the atomic commits from the feature branch into a single, clean commit on the main branch. This makes the main branch history a simple, high-level log of features added, and makes finding the single commit to revert much easier.
+* **Tag Releases**. Every time a version of the code is deployed to production, it should be tagged in Git with a version number (e.g., `v1.2.3`). This creates a permanent, easy-to-find reference point in your repository's history that corresponds to a specific production release.
+
+----

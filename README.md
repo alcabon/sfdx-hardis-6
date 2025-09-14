@@ -254,3 +254,63 @@ For metadata other than Flows, `sfdx-hardis` does not provide a custom visual di
 `sfdx-hardis` provides an **excellent and innovative solution for the most difficult visualization challenge** (Flows) while pragmatically improving the standard diffing experience for all other metadata. The automated inclusion of the Flow Visual Git Diff in pull request comments is a standout feature that significantly enhances the DevOps lifecycle for any team working with Salesforce automations.
 
 ---
+
+That's an excellent, challenging question that exposes the fundamental differences in their operational philosophies. Here’s a breakdown of how Gearset and `sfdx-hardis` would manage a single-feature rollback.
+
+### The Core Difference: State vs. History
+
+The primary distinction is what each tool considers the "truth" to roll back to:
+* **Gearset** rolls back to a **previous state** of the org, discovered through real-time comparison or a snapshot.
+* `sfdx-hardis` rolls back by **reverting a change in the Git history** and deploying that reversal.
+
+***
+### ## Gearset: Org-State Comparison and Destructive Deployment
+
+Gearset’s rollback feature is essentially a reverse deployment. It's a powerful, UI-driven process that intelligently figures out what needs to be removed or changed.
+
+**Exact Rollback Process with Gearset:**
+
+1.  **Select Rollback Scope:** In the Gearset UI, you navigate to the deployment history and find the specific deployment you want to roll back.
+2.  **Initiate Comparison:** Gearset re-runs a comparison, but this time it compares the **current state of the target org** against the **snapshot it took just before the original deployment**.
+3.  **Generate Destructive Package:** It automatically identifies the differences.
+    * Components that were **added** in the original deployment are now marked for **deletion**.
+    * Components that were **changed** are now marked to be reverted to their **previous version**.
+4.  **Review and Deploy:** Gearset presents this "destructive package" for you to review. You can see exactly what will be deleted or reverted. Once you approve, Gearset runs a standard metadata deployment to apply these destructive and reverting changes to the org. 
+
+**Evaluation:**
+* **Strengths:** Incredibly powerful and intuitive. It requires no Git expertise. It can even handle situations where manual "hotfix" changes were made in the org after the initial deployment, as it compares the *current* live state.
+* **Weaknesses:** The rollback is an org-level operation that isn't inherently tied to your source control. You must separately ensure your Git repository is updated to reflect the rollback, otherwise your Git history will no longer match your org's reality, leading to "source drift."
+
+***
+### sfdx-hardis: Git History Reversal and CI/CD Pipeline
+
+`sfdx-hardis` treats a rollback as just another deployment—a deployment that happens to contain the *opposite* of the original changes. The process is entirely Git-centric.
+
+**Exact Rollback Process with `sfdx-hardis`:**
+
+1.  **Identify the Merge Commit:** The developer or release manager finds the merge commit on the main branch (e.g., `main` or `integration`) that corresponds to the feature being rolled back.
+2.  **Revert the Commit:** They execute a `git revert <merge-commit-hash>` command. Git automatically creates a **new commit** that perfectly undoes all the changes introduced in the original feature merge. This new "revert commit" is now the latest commit on the main branch.
+3.  **Trigger the Pipeline:** Pushing this new revert commit to the remote repository triggers the **exact same CI/CD pipeline** that is used for any other feature.
+4.  **Automated Deployment:** The `sf hardis:project:deploy:smart` command in the pipeline runs.
+    * It uses `sfdx-git-delta` to compare the new revert commit to the previous one.
+    * It automatically generates a `package.xml` containing the reverted versions of changed files and a `destructiveChanges.xml` containing the components that were added in the original feature.
+    * The pipeline then deploys this package to the org, effectively rolling back the change.
+
+**Evaluation:**
+* **Strengths:** The rollback is a fully audited, transparent, and repeatable process captured forever in the Git history. There is zero chance of source drift, as the rollback *is* a source control operation. It uses the same battle-tested CI/CD process as any regular deployment.
+* **Weaknesses:** It requires Git expertise. It cannot account for manual "hotfix" changes made directly in the org, because it only knows what's in the Git history. The rollback must follow the same deployment path as the original feature.
+
+***
+## Comparison Table
+
+| Aspect | Gearset | sfdx-hardis |
+| :--- | :--- | :--- |
+| **Philosophy** | "Roll back the **org's state**" | "Roll back the **Git history**" |
+| **Trigger** | Clicking a "Rollback" button in the UI. | Pushing a `git revert` commit. |
+| **Mechanism** | Compares current org state to a pre-deployment snapshot to build a destructive package. | Uses the standard CI/CD pipeline to deploy a commit that reverses the original changes. |
+| **Required Skill** | Salesforce Admin / User of Gearset UI. | Developer / Release Manager with Git expertise. |
+| **Audit Trail** | A deployment record within Gearset's history. | A permanent, auditable `revert` commit in the Git repository. |
+| **Source Drift** | **High risk.** The org is rolled back, but Git is not. Manual Git reversion is a separate, required step. | **Zero risk.** The Git history is changed first, and the org is simply deployed to match the new state of the repository. |
+| **Handles Hotfixes?** | **Yes.** It compares the *current* live state, so it will correctly handle any manual changes made since the original deployment. | **No.** It only knows about what's in Git. Manual org changes are invisible to this process. |
+
+---

@@ -264,7 +264,7 @@ The primary distinction is what each tool considers the "truth" to roll back to:
 * `sfdx-hardis` rolls back by **reverting a change in the Git history** and deploying that reversal.
 
 ***
-### ## Gearset: Org-State Comparison and Destructive Deployment
+### Gearset: Org-State Comparison and Destructive Deployment
 
 Gearset’s rollback feature is essentially a reverse deployment. It's a powerful, UI-driven process that intelligently figures out what needs to be removed or changed.
 

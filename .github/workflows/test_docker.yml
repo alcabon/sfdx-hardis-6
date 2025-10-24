@@ -1,6 +1,8 @@
-name: SFDX Build with Custom Image
+name: SFDX Test Custom Image (Manuel)
 
-on: [push]
+on:
+  # Remplacement de [push] par [workflow_dispatch] pour permettre un lancement manuel
+  workflow_dispatch:
 
 jobs:
   sfdx_job:
@@ -19,7 +21,7 @@ jobs:
         # Les actions de GitHub (comme checkout) peuvent s'exécuter dans le conteneur
         uses: actions/checkout@v4 
         
-      - name: Afficher la version de SFDX
+      - name: Afficher la version de SFDX et des plugins
         # Ces commandes sont exécutées DANS le conteneur Docker.
         run: |
           sf --version

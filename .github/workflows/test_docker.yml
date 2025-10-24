@@ -30,3 +30,4 @@ jobs:
           sf plugins
           # sf hardis --version
           sf sgd source delta --help
+          sf help hardis

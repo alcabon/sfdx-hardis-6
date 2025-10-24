@@ -1,0 +1,27 @@
+name: SFDX Build with Custom Image
+
+on: [push]
+
+jobs:
+  sfdx_job:
+    # Définit l'image Docker à utiliser pour l'exécution de toutes les étapes du job
+    container: 
+      image: ghcr.io/alcabon/sfdx-hardis-6/sfdx-hardis:sha-f5355ab
+      # Spécifiez le registre et utilisez le GITHUB_TOKEN pour l'authentification si le repo est privé
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+        
+    runs-on: ubuntu-latest # L'exécution se fait sur un runner, mais les étapes sont dans le conteneur.
+    
+    steps:
+      - name: Checkout repository
+        # Les actions de GitHub (comme checkout) peuvent s'exécuter dans le conteneur
+        uses: actions/checkout@v4 
+        
+      - name: Afficher la version de SFDX
+        # Ces commandes sont exécutées DANS le conteneur Docker.
+        run: |
+          sf --version
+          sf plugins --core
+          sf hardis --version

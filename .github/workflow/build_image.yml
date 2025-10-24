@@ -1,0 +1,47 @@
+name: Docker Image Build and Push to GHCR
+
+on:
+  push:
+    branches:
+      - main # Déclenche le workflow lors d'un push sur la branche 'main' (ou autre branche principale)
+    # Facultatif : vous pouvez aussi ajouter un déclencheur pour les tags
+    # tags:
+    #   - 'v*'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Nécessaire pour écrire (push) sur GHCR
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4 # Récupère le code source, y compris le Dockerfile
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }} # Nom d'utilisateur GitHub
+          password: ${{ secrets.GITHUB_TOKEN }} # Token d'accès (Généré automatiquement par GitHub)
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/sfdx-hardis # Définit le nom de l'image (e.g., ghcr.io/votre-org/votre-repo)
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=ref,event=branch
+            type=semver,pattern={{version}} # Utilise les tags SemVer si disponibles
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: . # Chemin vers le dossier contenant le Dockerfile (ici, la racine du repo)
+          file: ./Dockerfile # Chemin vers votre Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

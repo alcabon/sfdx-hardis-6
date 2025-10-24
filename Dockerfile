@@ -1,11 +1,10 @@
+# Custom image for your team
 FROM ghcr.io/hardisgroupcom/sfdx-hardis:latest
 
-# Install recommended plugins
+# Install your standard plugins
 RUN npm install -g \
-    @salesforce/plugin-packaging \
     sfdmu \
-    sfdx-git-delta \
-    sfdx-essentials
+    @salesforce/plugin-packaging \
+    sfdx-git-delta
 
-# Verify
 RUN sf plugins

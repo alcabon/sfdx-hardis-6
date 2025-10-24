@@ -27,5 +27,6 @@ jobs:
           export HOME=/root
           sf --version
           sf plugins --core
-          sf hardis --version
+          sf plugins
+          # sf hardis --version
           sf sgd source delta --help

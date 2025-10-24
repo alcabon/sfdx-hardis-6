@@ -24,6 +24,7 @@ jobs:
       - name: Afficher la version de SFDX et des plugins
         # Ces commandes sont exécutées DANS le conteneur Docker.
         run: |
+          export HOME=/root
           sf --version
           sf plugins --core
           sf hardis --version

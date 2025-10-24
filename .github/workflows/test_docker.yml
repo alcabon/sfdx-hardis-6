@@ -28,3 +28,4 @@ jobs:
           sf --version
           sf plugins --core
           sf hardis --version
+          sf sgd source delta --help

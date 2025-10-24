@@ -1,12 +1,15 @@
-name: Docker Image Build and Push to GHCR
+name: Docker Image Build and Push to GHCR (Manual)
 
 on:
-  push:
-    branches:
-      - main # Déclenche le workflow lors d'un push sur la branche 'main' (ou autre branche principale)
-    # Facultatif : vous pouvez aussi ajouter un déclencheur pour les tags
-    # tags:
-    #   - 'v*'
+  # Remplacement du 'push' par 'workflow_dispatch' pour permettre une exécution manuelle
+  workflow_dispatch:
+    # Vous pouvez ajouter des entrées (inputs) pour le workflow si nécessaire, par exemple pour spécifier un tag
+    inputs:
+      tag_name:
+        description: 'Tag de l''image Docker (laissez vide pour utiliser le SHA par défaut ou latest)'
+        required: false
+        default: 'manual-build' # Un tag par défaut pour les constructions manuelles
+        type: string
 
 jobs:
   build-and-push:
@@ -30,18 +33,23 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}/sfdx-hardis # Définit le nom de l'image (e.g., ghcr.io/votre-org/votre-repo)
+          images: ghcr.io/${{ github.repository }}/sfdx-hardis
           tags: |
+            # Ajout du tag 'latest' sur la branche par défaut
             type=raw,value=latest,enable={{is_default_branch}}
+            # Ajout du tag fourni manuellement (s'il existe)
+            type=raw,value=${{ github.event.inputs.tag_name }}
+            # Tag basé sur le SHA de commit
             type=sha
+            # Tag basé sur la branche
             type=ref,event=branch
-            type=semver,pattern={{version}} # Utilise les tags SemVer si disponibles
+            # type=semver,pattern={{version}} # Désactivé si vous ne gérez pas de tags SemVer
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: . # Chemin vers le dossier contenant le Dockerfile (ici, la racine du repo)
-          file: ./Dockerfile # Chemin vers votre Dockerfile
+          context: .
+          file: ./Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

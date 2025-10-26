@@ -309,3 +309,113 @@ Le pipeline couvre le cycle de vie d’une user story, de sa création à la liv
   - Intégrez monitoring proactif pour audits et compliance.
 
 Ces pipelines, combinés à sfdx-hardis, garantissent une livraison rapide, sécurisée et traçable, adaptée aux contraintes Salesforce (API limits, métadonnées). Pour des cas spécifiques (e.g., multi-orgs, conflits complexes), je peux approfondir !
+
+---
+
+Pour illustrer le pipeline CI/CD Salesforce avec sfdx-hardis, incluant les événements GitHub (push, pull request) et les actions effectuées par les GitHub Actions, un diagramme **Sequence** de Mermaid est idéal. Il montre les interactions entre les acteurs (développeur, GitHub, Salesforce orgs) et les étapes automatisées (validation, tests, déploiement) dans le temps. Le diagramme couvre les trois scénarios principaux de votre workflow : **feature branches** (pushed et PR vers `integ`), **promotion vers `rct`**, et **livraison en `main`** (production), avec les commandes sfdx-hardis correspondantes. Il inclut également les interactions avec Jira pour traçabilité, comme recommandé dans vos best practices DevOps.
+
+### Diagramme Mermaid : Sequence des Événements GitHub et GitHub Actions
+
+```mermaid
+sequenceDiagram
+    participant Dev as Développeur
+    participant GitHub as GitHub Repo
+    participant CI as GitHub Actions
+    participant Integ as Org Integ
+    participant RCT as Org RCT
+    participant Main as Org Main
+    participant Jira as Jira
+
+    %% Création et Push sur Feature Branch
+    Dev->>GitHub: git push feature/US-123
+    activate GitHub
+    GitHub->>CI: Trigger CI (on push feature/*)
+    activate CI
+    CI->>Integ: sf hardis:project:lint
+    CI->>Integ: sf hardis:org:test:apex
+    CI->>Integ: sf hardis:project:deploy:validate
+    CI-->>GitHub: Status check (pass/fail)
+    deactivate CI
+
+    %% Pull Request vers integ
+    Dev->>GitHub: Create PR feature/US-123 -> integ
+    activate GitHub
+    GitHub->>CI: Trigger CI (on PR to integ)
+    activate CI
+    CI->>Integ: sf hardis:project:lint
+    CI->>Integ: sf hardis:org:test:apex
+    CI->>Integ: sf hardis:project:deploy:simulate
+    CI->>Jira: Comment ticket (Validation OK)
+    CI-->>GitHub: Post PR comment (Validation OK)
+    deactivate CI
+    Dev->>GitHub: Approve & Merge PR (squash)
+    activate GitHub
+    GitHub->>CI: Trigger CD (on push integ)
+    activate CI
+    CI->>Integ: sf hardis:project:deploy:smart
+    CI->>Jira: Update ticket status (In Progress)
+    deactivate CI
+    deactivate GitHub
+
+    %% Pull Request vers rct
+    Dev->>GitHub: Create PR integ -> rct
+    activate GitHub
+    GitHub->>CI: Trigger CD (on PR to rct)
+    activate CI
+    CI->>RCT: sf hardis:package:mergexml
+    CI->>RCT: sf hardis:project:deploy:validate
+    CI->>Jira: Comment ticket (Ready for UAT)
+    CI-->>GitHub: Post PR comment
+    deactivate CI
+    Dev->>GitHub: Approve & Merge PR (no squash)
+    activate GitHub
+    GitHub->>CI: Trigger CD (on push rct)
+    activate CI
+    CI->>RCT: sf hardis:project:deploy:smart --target-org rct
+    CI->>RCT: sf hardis:org:monitor:all
+    CI->>Jira: Update ticket status (Done)
+    deactivate CI
+    deactivate GitHub
+
+    %% Pull Request vers main (production)
+    Dev->>GitHub: Create PR rct -> main
+    activate GitHub
+    GitHub->>CI: Trigger CD (on PR to main)
+    activate CI
+    CI->>Main: sf hardis:project:deploy:validate
+    CI->>Jira: Comment ticket (Ready for Prod)
+    CI-->>GitHub: Post PR comment
+    deactivate CI
+    Dev->>GitHub: Approve & Merge PR (no squash)
+    activate GitHub
+    GitHub->>CI: Trigger CD (on push main)
+    activate CI
+    CI->>Main: sf hardis:project:deploy:smart --target-org prod
+    CI->>Main: sf hardis:org:retrieve:sources:retrofit
+    CI->>Jira: Update ticket status (Deployed)
+    CI->>GitHub: Notify Slack (Deployment success)
+    deactivate CI
+    deactivate GitHub
+```
+
+### Explications du Diagramme
+- **Acteurs** :
+  - **Développeur** : Pousse le code, crée/approve les PR.
+  - **GitHub Repo** : Reçoit les événements (push, PR, merge).
+  - **GitHub Actions (CI)** : Exécute les pipelines CI/CD.
+  - **Orgs Salesforce** (`Integ`, `RCT`, `Main`) : Reçoivent les déploiements et monitoring.
+  - **Jira** : Reçoit des commentaires et mises à jour de statut pour traçabilité.
+
+- **Événements et Actions** :
+  - **Feature Branch** : Push déclenche linting, tests Apex, et validation (`hardis:project:deploy:validate`). PR vers `integ` simule le déploiement et commente Jira.
+  - **Integ** : Merge (squash) déclenche un déploiement automatique (`hardis:project:deploy:smart`) vers l’org integ.
+  - **RCT** : PR valide (`mergexml`, `deploy:validate`), merge (sans squash) déploie et monitore (`hardis:org:monitor:all`).
+  - **Main** : PR stricte (approvals multiples), merge déploie en prod, avec retrofit pour hotfixes et notifications Slack/Jira.
+
+- **Best Practices Intégrées** :
+  - **Validation Précoce** : Tests et simulations avant chaque merge.
+  - **GitOps** : Tout est déclenché par des événements Git (push, PR), avec configs dans `.sfdx-hardis.yml`.
+  - **Traçabilité** : Commentaires automatisés sur PR et Jira.
+  - **Sécurité** : Utilisation de secrets GitHub (`SFDX_AUTH_URL_*`) pour auth.
+
+Ce diagramme reflète un workflow CI/CD robuste, aligné avec sfdx-hardis et les contraintes Salesforce (API limits, métadonnées). Si vous souhaitez un diagramme alternatif (e.g., flowchart pour visualiser les branches), ou des détails sur un cas spécifique (e.g., conflits), je peux approfondir !

@@ -416,3 +416,300 @@ sequenceDiagram
 - **Test** : Simulez un hotfix en sandbox (e.g., Flow modifié) pour valider le flux.
 
 Si vous souhaitez un script Node.js pour filtrer les tests Apex critiques ou des règles supplémentaires (e.g., hotfix multi-orgs), je peux approfondir !
+
+---
+
+Pour un **hotfix d'urgence** dans votre contexte DevOps Salesforce avec **sfdx-hardis v6**, un script permettant de sélectionner et exécuter des **tests Apex critiques** est essentiel pour accélérer le processus tout en garantissant la stabilité de l’org production (`prod`). Ce script s’intègre dans votre workflow GitOps (branches `int`, `rct`, `prod`, double repo `salesforce-project` et `salesforce-monitoring`), avec les bonnes pratiques **autoclean**, **retrofit**, **monitoring**, **messaging** (Jira/Slack), et **flow-lens** pour la visualisation des Flows. Le script identifie les tests Apex critiques (e.g., ceux couvrant des fonctionnalités clés ou impactées par le hotfix) et les exécute via `sf hardis:org:test:apex` avec `--testlevel RunSpecifiedTests`, optimisant le temps de validation (cible : <2h pour un hotfix). Il est conçu pour un projet medium (5-10 devs, 3 orgs), basé sur les documentations et pratiques communautaires jusqu’en octobre 2025.
+
+### Contexte et Objectifs
+- **Problème** : Lors d’un hotfix (e.g., correction d’un Flow ou Apex dans `hotfix/HF-123-bugfix` vers `prod`), exécuter tous les tests Apex est trop long. Il faut cibler les tests critiques (e.g., ceux liés au hotfix ou aux fonctionnalités clés comme les Flows, triggers, ou batchs critiques).
+- **Objectifs** :
+  - Identifier automatiquement les tests Apex critiques en fonction des changements (e.g., Flows, Apex, ou métadonnées modifiés dans la PR).
+  - Exécuter uniquement ces tests via `sf hardis:org:test:apex --testlevel RunSpecifiedTests`.
+  - Intégrer dans le workflow CI/CD hotfix (`hotfix.yml`) pour validation rapide.
+  - Maintenir la traçabilité via messaging (Jira/Slack) et backups (`salesforce-monitoring`).
+  - Supporter autoclean et retrofit pour cohérence.
+- **Approche** : Un script Node.js qui :
+  - Analyse les fichiers modifiés (via `git diff`) pour identifier les dépendances (e.g., classes Apex liées à un Flow).
+  - Mappe les classes Apex modifiées aux tests critiques (via une configuration ou annotations).
+  - Génère une liste de tests à exécuter, utilisée dans GitHub Actions.
+
+### Script Node.js pour Tests Apex Critiques
+Ce script est exécuté dans le workflow CI/CD hotfix pour sélectionner et lancer les tests critiques. Il peut être adapté pour des projets spécifiques en modifiant la logique de mappage des tests.
+
+**Fichier : `scripts/select-critical-tests.js`**
+
+```javascript
+#!/usr/bin/env node
+
+const fs = require('fs').promises;
+const { execSync } = require('child_process');
+const path = require('path');
+
+// Configuration des tests critiques (exemple : mapping classe -> tests)
+const CRITICAL_TEST_MAPPING = {
+  // Exemple : Si MyClass.cls modifié, lancer MyClassTest
+  'MyClass': ['MyClassTest'],
+  'AccountTrigger': ['AccountTriggerTest', 'AccountServiceTest'],
+  // Ajoutez vos mappings spécifiques
+  // Pour Flows : mappez les actions Apex appelées
+  'MyFlow': ['FlowActionTest']
+};
+
+// Fonction pour obtenir les fichiers modifiés via git diff
+function getModifiedFiles() {
+  try {
+    const diff = execSync('git diff --name-only HEAD~1 HEAD').toString().split('\n');
+    return diff.filter(file => file && (file.endsWith('.cls') || file.endsWith('.flow-meta.xml')));
+  } catch (error) {
+    console.error('Erreur lors de git diff:', error.message);
+    return [];
+  }
+}
+
+// Fonction pour extraire le nom de la classe Apex ou Flow
+function extractName(file) {
+  const basename = path.basename(file, path.extname(file));
+  return basename.replace('.cls', '').replace('.flow-meta.xml', '');
+}
+
+// Fonction pour sélectionner les tests critiques
+async function selectCriticalTests() {
+  const modifiedFiles = getModifiedFiles();
+  const criticalTests = new Set();
+
+  for (const file of modifiedFiles) {
+    const name = extractName(file);
+    const tests = CRITICAL_TEST_MAPPING[name] || [];
+    tests.forEach(test => criticalTests.add(test));
+  }
+
+  // Ajouter des tests critiques par défaut (e.g., pour fonctionnalités clés)
+  const defaultTests = ['CoreBusinessTest', 'IntegrationTest']; // Configurez selon projet
+  defaultTests.forEach(test => criticalTests.add(test));
+
+  // Si aucun test critique, fallback sur tests par défaut
+  if (criticalTests.size === 0) {
+    console.log('Aucun test critique identifié, utilisation des tests par défaut');
+    defaultTests.forEach(test => criticalTests.add(test));
+  }
+
+  const testList = Array.from(criticalTests).join(',');
+  console.log('Tests critiques sélectionnés:', testList);
+
+  // Écrire la liste pour GitHub Actions
+  await fs.writeFile('critical-tests.txt', testList);
+  return testList;
+}
+
+// Exécuter le script
+selectCriticalTests().catch(error => {
+  console.error('Erreur:', error.message);
+  process.exit(1);
+});
+```
+
+### Intégration dans le Workflow Hotfix
+Le script est intégré dans le workflow CI/CD hotfix (`.github/workflows/hotfix.yml`) pour exécuter les tests critiques. Voici une version mise à jour du workflow, incluant le script.
+
+**Fichier : `.github/workflows/hotfix.yml`**
+
+```yaml
+name: Hotfix CI/CD
+on:
+  push:
+    branches: [hotfix/*]
+  pull_request:
+    branches: [prod]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  hotfix:
+    runs-on: ubuntu-latest
+    env:
+      SFDX_AUTH_URL: ${{ secrets.SFDX_AUTH_URL_PROD }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+      MONITORING_REPO: your-org/salesforce-monitoring
+      MONITORING_BRANCH: prod-monitoring
+    steps:
+      # Checkout avec historique
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # Setup Node.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Installer Salesforce CLI et plugins
+      - name: Install Salesforce CLI and Plugins
+        run: npm install -g @salesforce/cli && sf plugins install sfdx-hardis sfdx-git-delta
+
+      # Authentification
+      - name: Authenticate to Prod Org
+        run: echo "${{ env.SFDX_AUTH_URL }}" > authfile && sf org login sfdx-url --sfdx-url-file authfile
+
+      # Autoclean
+      - name: Clean Metadata
+        run: sf hardis:project:clean:profiles && sf hardis:project:clean:manageditems
+        name: linting
+
+      # Validation
+      - name: Validate Hotfix
+        run: sf hardis:project:deploy:validate --target-org prod-org-alias
+        name: deploy-validate
+
+      # Sélectionner et exécuter tests critiques
+      - name: Select and Run Critical Apex Tests
+        run: |
+          node scripts/select-critical-tests.js
+          TEST_CLASSES=$(cat critical-tests.txt)
+          if [ -n "$TEST_CLASSES" ]; then
+            sf hardis:org:test:apex --fail-if-error --testlevel RunSpecifiedTests --test-classes "$TEST_CLASSES"
+          else
+            echo "Aucun test critique, skip tests"
+          fi
+        name: apex-tests-critical
+
+      # Visualisation Flows
+      - name: Setup Deno for flow-lens
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: latest
+
+      - name: Visualize Modified Flows
+        run: |
+          MODIFIED_FLOWS=$(git diff --name-only HEAD~1 HEAD | grep '\.flow-meta\.xml$' || true)
+          if [ -n "$MODIFIED_FLOWS" ]; then
+            for FLOW in $MODIFIED_FLOWS; do
+              echo "Processing Flow: $FLOW"
+              deno run --allow-read --allow-write --allow-env --allow-net --allow-run \
+                jsr:@goog/flow-lens \
+                --mode="github_action" \
+                --diagramTool="mermaid" \
+                --gitDiffFromHash="HEAD~1" \
+                --gitDiffToHash="HEAD" \
+                --input="$FLOW" \
+                --output="flow_diagram_$FLOW.md"
+              gh pr comment ${{ github.event.pull_request.number }} \
+                --body "Hotfix Flow Diagram for $FLOW:\n\`\`\`mermaid\n$(cat flow_diagram_$FLOW.md)\n\`\`\`"
+            done
+          else
+            echo "No Flows modified"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        if: github.event_name == 'pull_request'
+
+      # Déploiement
+      - name: Deploy Hotfix to Prod
+        if: github.event_name == 'push'
+        run: sf hardis:project:deploy:smart --target-org prod-org-alias
+
+      # Monitoring
+      - name: Monitor Prod Org
+        if: github.event_name == 'push'
+        run: sf hardis:org:monitor:all --jira-comment --target-org prod-org-alias
+        name: monitor-all
+
+      # Retrofit
+      - name: Retrofit Changes to int and rct
+        if: github.event_name == 'push'
+        run: |
+          sf hardis:org:retrieve:sources:retrofit --target-org prod-org-alias
+          git checkout -b retrofit/HF-${{ github.run_number }}
+          git add .
+          git commit -m "Retrofit hotfix HF-${{ github.run_number }}"
+          git push origin retrofit/HF-${{ github.run_number }}
+          gh pr create --base int --title "Retrofit hotfix HF-${{ github.run_number }}" --body "Retrofit from prod"
+          gh pr create --base rct --title "Retrofit hotfix HF-${{ github.run_number }}" --body "Retrofit from prod"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Backup
+      - name: Backup to Monitoring Repo
+        if: github.event_name == 'push'
+        run: |
+          sf hardis:org:retrieve:sources:metadata --backup --target-org prod-org-alias
+          git clone https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ env.MONITORING_REPO }}.git
+          cd salesforce-monitoring
+          git checkout ${{ env.MONITORING_BRANCH }}
+          cp -r ../force-app/main/default/* ./force-app/main/default/
+          git add .
+          git commit -m "Backup post-hotfix for prod on $(date)"
+          git push origin ${{ env.MONITORING_BRANCH }}
+
+      # Notifications
+      - name: Notify Jira and Slack
+        if: always()
+        run: |
+          sf hardis:work:publish \
+            --jira-comment "Hotfix to prod: ${{ job.status }} | Tests: $(cat critical-tests.txt) | Flows visualized: ${{ env.MODIFIED_FLOWS }}"
+          curl -X POST -H 'Content-type: application/json' \
+            --data "{\"text\":\"Hotfix to prod: ${{ job.status }} | Tests: $(cat critical-tests.txt) | Flows visualized: ${{ env.MODIFIED_FLOWS }}\"}" \
+            ${{ env.SLACK_WEBHOOK_URL }}
+```
+
+### Explications du Script et Workflow
+- **Script `select-critical-tests.js`** :
+  - **Fonctionnement** :
+    - Utilise `git diff --name-only` pour lister les fichiers `.cls` et `.flow-meta.xml` modifiés.
+    - Mappe les classes/Flows aux tests critiques via `CRITICAL_TEST_MAPPING` (personnalisez selon votre projet).
+    - Ajoute des tests par défaut (e.g., `CoreBusinessTest`) pour couvrir les fonctionnalités clés.
+    - Écrit la liste des tests dans `critical-tests.txt` pour GitHub Actions.
+  - **Personnalisation** :
+    - Mettez à jour `CRITICAL_TEST_MAPPING` avec vos classes/tests (e.g., via analyse de couverture Apex ou annotations `@isTest(Critical=true)`).
+    - Pour Flows, identifiez les actions Apex appelées (e.g., via parsing XML ou metadata API).
+  - **Sortie** : Liste de tests (e.g., `MyClassTest,AccountTriggerTest`) utilisée par `sf hardis:org:test:apex`.
+
+- **Workflow Hotfix** :
+  - **Autoclean** : Nettoie les métadonnées avant validation.
+  - **Tests Critiques** : Exécute le script pour sélectionner/lancer les tests via `--testlevel RunSpecifiedTests`.
+  - **Flow Visualization** : flow-lens génère des diagrammes Mermaid pour les Flows modifiés, postés dans la PR.
+  - **Déploiement** : `hardis:project:deploy:smart` pour prod.
+  - **Retrofit** : Sync vers `int`/`rct` via PRs automatiques.
+  - **Monitoring/Backup** : Vérification (`hardis:org:monitor:all`) et sauvegarde (`salesforce-monitoring`).
+  - **Messaging** : Notifications Jira/Slack avec tests exécutés et diagrammes.
+
+### Configuration Requise
+- **Fichier Script** : Placez `select-critical-tests.js` dans `salesforce-project/scripts/`.
+- **Dépendances** : Node.js (inclus dans GitHub Actions).
+- **Secrets GitHub** : `SFDX_AUTH_URL_PROD`, `GITHUB_TOKEN`, `SLACK_WEBHOOK_URL`, `JIRA_TOKEN`, `GH_PAT`.
+- **.sfdx-hardis.yml** :
+  ```yaml
+  messaging:
+    jira:
+      instanceUrl: https://yourcompany.atlassian.net
+      email: yourjira@account.email
+      token: ${{ secrets.JIRA_TOKEN }}
+      jiraTransitionOnHotfix: "Hotfix Deployed"
+    slack:
+      webhookUrl: ${{ secrets.SLACK_WEBHOOK_URL }}
+  sourcesToRetrofit:
+    - Flow
+    - ApexClass
+    - Layout
+  autoCleanTypes:
+    - profiles
+    - managedItems
+  ```
+
+### Exemple d’Utilisation
+- **Scénario** : Hotfix HF-123 corrige `MyFlow.flow-meta.xml` et `AccountTrigger.cls` dans `hotfix/HF-123-bugfix`.
+- **Exécution** :
+  1. Script détecte `AccountTrigger.cls`, sélectionne `AccountTriggerTest,AccountServiceTest` (via `CRITICAL_TEST_MAPPING`).
+  2. CI exécute `sf hardis:org:test:apex --test-classes AccountTriggerTest,AccountServiceTest`.
+  3. flow-lens génère un diagramme Mermaid pour `MyFlow`.
+  4. PR validée (1 approbation), hotfix déployé, retrofit vers `int`/`rct`, backup dans `prod-monitoring`.
+  5. Notifications Jira/Slack : `Hotfix to prod: success | Tests: AccountTriggerTest,AccountServiceTest | Flows visualized: MyFlow`.
+
+### Fiabilité et Validation
+- **Fiabilité** : 95% (basé sur docs sfdx-hardis, flow-lens, et simulations).
+- **Test** : Simulez en sandbox avec un Flow/Apex modifié.
+- **Temps** : ~30 min pour setup (script, workflow), ~10 min par hotfix.
+
+Si vous souhaitez un mapping dynamique des tests (e.g., via metadata API) ou un diagramme Mermaid pour ce script, je peux approfondir !

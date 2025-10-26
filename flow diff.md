@@ -4,6 +4,10 @@ En tant qu'expert DevOps Salesforce avec une expertise simulée équivalente à 
 
 Ma comparaison s'appuie sur une analyse des repositories GitHub (stars, activité, features), des documentations, et des cas d'usage réels (e.g., intégration CI/CD, support pour diffs). Les deux sont open-source, légers, et focalisés sur Salesforce Flows, mais **flow-lens** émerge comme le meilleur choix global pour sa maturité, son intégration GitHub, et son support pour les diffs – essentiel dans un DevOps pur. Voici une évaluation détaillée.
 
+https://github.com/google/flow-lens
+
+https://github.com/toddhalfpenny/salesforce-flow-visualiser
+
 https://github.com/google/flow-lens/raw/main/docs/img/Demo_Flow.png
 
 #### Tableau Comparatif

@@ -8,7 +8,8 @@ https://github.com/google/flow-lens
 
 https://github.com/toddhalfpenny/salesforce-flow-visualiser
 
-https://github.com/google/flow-lens/raw/main/docs/img/Demo_Flow.png
+<img width="945" height="640" alt="image" src="https://github.com/user-attachments/assets/aebebb32-6c75-4b81-b720-f3a8b7c710b7" />
+
 
 #### Tableau Comparatif
 

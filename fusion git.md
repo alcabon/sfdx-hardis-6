@@ -967,3 +967,177 @@ Si ton projet implique de sélectionner des features pour la production dans un 
 Le cherry-pick, bien qu’intuitif et séduisant pour les débutants, est moins adapté aux workflows collaboratifs en raison de ses limites en traçabilité et en compatibilité. **Release-candidate avec revert** est la meilleure pratique pour sélectionner des features à pousser en production, car elle offre un équilibre optimal entre clarté, collaboration, et robustesse. **Merge + revert** est une alternative proche, mais légèrement moins propre. En adoptant ces stratégies, tu respectes les bonnes pratiques (suppression des branches temporaires, interdiction du rebase, intégration avec les PR) tout en maintenant un historique clair et auditable.
 
 Si tu veux un exemple concret avec un historique Git simulé, une visualisation graphique, ou une explication sur comment appliquer cela dans un workflow spécifique (Gitflow, trunk-based, etc.), fais-moi signe !
+
+---
+
+Oui, excellente question ! Dans Git, lorsqu’un commit est créé avec `git revert`, il est explicitement marqué comme un **revert** dans son message de commit par défaut, ce qui permet de l’identifier clairement comme une annulation d’un commit précédent (dans ton exemple, `F` est le revert de `D`). Je vais expliquer comment vérifier que `F` est bien le revert de `D` à l’aide d’une commande Git, et comment cette information est visible dans l’historique. Ensuite, je détaillerai les commandes pertinentes pour afficher cette relation de manière claire, en restant dans le contexte de ton exemple et des bonnes pratiques collaboratives.
+
+### Contexte de ton exemple
+Tu as créé une branche `release-candidate` à partir de `develop` et annulé le commit `D` avec `git revert D`, ce qui produit l’historique suivant :
+
+```
+A --- B --- C --- D --- E --- F  (release-candidate)
+```
+
+- `A`, `B`, `C`, `D`, `E` : Commits provenant de `develop`.
+- `F` : Commit créé par `git revert D`, qui annule les modifications introduites par `D`.
+
+L’objectif est de confirmer, via une commande, que `F` est bien le revert de `D` et de rendre cette relation claire.
+
+### 1. **Comment Git marque un revert ?**
+Lorsque tu exécutes `git revert <commit-id>`, Git crée un nouveau commit (ici, `F`) avec un message de commit par défaut qui indique explicitement qu’il s’agit d’une annulation du commit spécifié (ici, `D`). Le message par défaut ressemble à ceci :
+
+```
+Revert "<message du commit D>"
+
+This reverts commit <SHA de D>.
+```
+
+- Le message inclut :
+  - Le mot-clé **"Revert"** en début de message.
+  - Une référence explicite au SHA du commit annulé (`D`).
+- Ce message est une **indication claire** que `F` est le revert de `D`.
+
+### 2. **Commandes pour vérifier que `F` est le revert de `D`**
+
+Pour voir cette relation explicitement, tu peux utiliser des commandes Git qui affichent l’historique des commits, y compris leurs messages et métadonnées. Voici les commandes les plus utiles :
+
+#### a) **Afficher l’historique avec `git log`**
+La commande `git log` permet de voir les messages des commits, où l’information du revert est visible.
+
+```bash
+git log --oneline
+```
+
+**Sortie attendue** (exemple) :
+```
+abcdef6 (release-candidate) Revert "Add feature X"
+abcde45 Add feature Y
+abcd123 Add feature X
+...
+```
+
+- Le commit `F` (par exemple, `abcdef6`) aura un message commençant par `Revert` suivi du message original de `D` (par exemple, `Add feature X`).
+- Pour plus de détails, utilise :
+  ```bash
+  git log -1 -p <SHA de F>
+  ```
+  - `-1` : Limite l’affichage au commit `F`.
+  - `-p` : Montre les modifications (diff) du commit.
+  - Dans le message de `F`, tu verras : `This reverts commit <SHA de D>`, confirmant que `F` annule `D`.
+
+#### b) **Afficher le message complet avec `git show`**
+Pour inspecter directement le commit `F` et confirmer qu’il est un revert de `D` :
+
+```bash
+git show <SHA de F>
+```
+
+**Sortie attendue** (exemple) :
+```
+commit abcdef6 (release-candidate)
+Author: Utilisateur <email>
+Date:   Tue Oct 28 12:04:00 2025 +0100
+
+    Revert "Add feature X"
+
+    This reverts commit abcd123.
+
+diff --git a/fichier.txt b/fichier.txt
+index 789...456 100644
+--- a/fichier.txt
++++ b/fichier.txt
+...
+```
+
+- Le message indique clairement : `This reverts commit abcd123`, où `abcd123` est le SHA de `D`.
+- Le diff montre les modifications inversées par rapport à `D` (par exemple, suppression des lignes ajoutées par `D`).
+
+#### c) **Rechercher les reverts avec `git log --grep`**
+Si tu veux trouver tous les commits de revert dans l’historique, tu peux filtrer les messages contenant "Revert" :
+
+```bash
+git log --grep="Revert"
+```
+
+**Sortie attendue** :
+- Affiche uniquement les commits dont le message contient "Revert", comme `F` dans ton exemple.
+- Tu peux affiner avec :
+  ```bash
+  git log --grep="This reverts commit <SHA de D>"
+  ```
+  pour trouver précisément le revert du commit `D`.
+
+#### d) **Visualisation graphique avec `git log --graph`**
+Pour une vue graphique de l’historique, utilise :
+
+```bash
+git log --graph --oneline --all
+```
+
+**Sortie attendue** (simplifiée) :
+```
+* abcdef6 (release-candidate) Revert "Add feature X"
+* abcde45 Add feature Y
+* abcd123 Add feature X
+...
+```
+
+- La ligne de `F` (`abcdef6`) montre le message `Revert "Add feature X"`, indiquant qu’il annule le commit `D` (`abcd123`).
+
+### 3. **Rendre la relation encore plus claire**
+Pour s’assurer que l’indication du revert est explicite et facile à repérer :
+- **Conserver ou personnaliser le message de revert** : Lors de l’exécution de `git revert D`, Git propose un message par défaut. Tu peux le modifier pour ajouter des informations contextuelles, par exemple :
+  ```bash
+  git revert D -m "Annulation de la feature X pour la release-candidate v1.2"
+  ```
+  Cela rend le revert encore plus explicite dans l’historique.
+- **Utiliser des conventions de nommage** : Inclure des références (par exemple, numéros de tickets Jira ou GitHub) dans le message de revert pour lier `F` à `D` et au contexte du projet. Exemple :
+  ```
+  Revert "Add feature X [JIRA-123]"
+
+  This reverts commit abcd123 for release v1.2 [JIRA-456].
+  ```
+
+### 4. **Bonne pratique dans un contexte collaboratif**
+Dans un workflow collaboratif avec un dépôt centralisé comme GitHub :
+- **Pousser la branche `release-candidate`** :
+  ```bash
+  git push origin release-candidate
+  ```
+  Cela permet de soumettre la branche à une pull request (PR) pour revue.
+- **Vérifier via la PR** : Sur GitHub, les messages de commit (y compris celui de `F`) sont visibles dans la PR, et l’équipe peut confirmer que `F` est bien un revert de `D` grâce au message `This reverts commit <SHA de D>`.
+- **Fusion et suppression** : Après revue, fusionnez `release-candidate` dans `main` avec `--no-ff` pour préserver la traçabilité, puis supprimez la branche temporaire :
+  ```bash
+  git checkout main
+  git merge --no-ff release-candidate
+  git push origin --delete release-candidate
+  ```
+
+### 5. **Commande recommandée pour une indication claire**
+Pour confirmer que `F` est le revert de `D`, la commande la plus directe est :
+
+```bash
+git show <SHA de F>
+```
+
+Cette commande affiche :
+- Le message du commit, incluant `This reverts commit <SHA de D>`.
+- Les modifications (diff) qui montrent l’inversion des changements de `D`.
+
+Si tu veux une vue rapide de tous les commits, y compris les reverts, dans l’historique de `release-candidate` :
+
+```bash
+git log --oneline --grep="Revert"
+```
+
+### 6. **Réponse concise**
+Oui, on peut voir clairement que `F` est le revert de `D` grâce au message du commit généré par `git revert`. Utilise :
+
+```bash
+git show <SHA de F>
+```
+
+La sortie affichera `This reverts commit <SHA de D>`, confirmant la relation. Pour une vue rapide, `git log --oneline --grep="Revert"` listera les commits de revert.
+
+Si tu veux une visualisation graphique, un exemple avec un historique plus complexe, ou des conseils pour intégrer cela dans une PR sur GitHub, fais-moi signe !

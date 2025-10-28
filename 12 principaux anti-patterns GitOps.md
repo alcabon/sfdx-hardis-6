@@ -1174,3 +1174,143 @@ Souhaites-tu :
 - Un **rapport PDF de conformité** ?
 
 → Je te le donne **en 1 clic**.
+
+---
+
+Voici **les différences GitOps vs DevOps** — **claires, précises, actionnables**, **dans le contexte Salesforce**.
+
+> **DevOps** = **philosophie**  
+> **GitOps** = **implémentation stricte** de cette philosophie
+
+---
+
+## Tableau Comparatif : **DevOps vs GitOps**
+
+| Critère | **DevOps** | **GitOps** |
+|--------|------------|------------|
+| **Définition** | Culture + outils pour **livrer vite et souvent** | **DevOps + Git = Source of Truth unique** |
+| **Source de vérité** | Multiples (Jira, org, scripts, CI) | **Uniquement Git** |
+| **Déploiement** | Manuel, CLI, Jenkins, Copado | **Automatique via `git push`** |
+| **État désiré** | Déclaré dans des scripts, tickets | **Déclaré dans le code Git** |
+| **Drift detection** | Manuel (`retrieve`) | Automatique (`retrofit`, `sfdx-git-delta`) |
+| **Rollback** | `sfdx force:source:deploy -u prod` | `git revert` + `deploy` |
+| **Audit** | Logs CI, tickets | `git log main` = état prod |
+| **Outils** | Jenkins, Copado, Gearset, Azure DevOps | **Git + `sfdx-hardis` + GitHub Actions** |
+| **Règles** | Souples, bonnes pratiques | **12 règles strictes** |
+| **Exemple Salesforce** | "Je déploie avec Copado" | "`main` = org prod, `sfdx-git-delta` passe" |
+
+---
+
+## Analogie Simple
+
+| DevOps | GitOps |
+|--------|--------|
+| **Cuisine ouverte** | **Cuisine robotisée** |
+| Chef décide, cuisine, sert | Recette = code, robot cuisine, sert |
+| Erreur humaine possible | Erreur = code cassé → CI rouge |
+| "Je sais ce que j’ai fait" | **Tout le monde voit ce qui a été fait** |
+
+---
+
+## DevOps vs GitOps — **Salesforce Concret**
+
+| Action | **DevOps (classique)** | **GitOps (strict)** |
+|-------|------------------------|---------------------|
+| Déployer une feature | Copado → clique "Deploy" | `git merge int → rct` → CI déploie |
+| Corriger un bug en prod | `sfdx force:mdapi:deploy` | `hotfix → main` → `main → int` |
+| Vérifier l’état de prod | `sfdx force:org:display` | `git log -1 main` |
+| Sauvegarder l’org | Copado Backup | `sf hardis:org:monitor:backup --branch main-monitoring` |
+| Revenir en arrière | "Cherche dans Copado" | `git revert abc123 && git push` |
+
+---
+
+## GitOps = **DevOps + 3 principes absolus**
+
+```mermaid
+graph TD
+    A[DevOps] --> B[GitOps]
+    B --> C[1. Git = Source of Truth]
+    B --> D[2. Déploiement déclaratif]
+    B --> E[3. État observé = état désiré]
+```
+
+---
+
+## Pourquoi **GitOps > DevOps** (en pratique)
+
+| Problème DevOps | Solution GitOps |
+|----------------|-----------------|
+| "Qui a déployé ça ?" | `git log --author` |
+| "L’org prod a changé" | `retrofit` → commit |
+| "Je ne sais pas ce qui est en prod" | `main` = prod |
+| "Rollback cassé" | `git revert` |
+| "CI/CD incohérente" | `sfdx-git-delta` échoue si Git ≠ org |
+
+---
+
+## Règles GitOps = **DevOps durci**
+
+| DevOps dit | GitOps impose |
+|-----------|--------------|
+| "Automatise" | `on: push: branches: [main]` |
+| "Collabore" | PR + 3 approvals |
+| "Teste" | `sf hardis:project:test:apex` |
+| "Sécurise" | Branch protection + `block-release-merge` |
+
+---
+
+## Résumé Visuel
+
+```mermaid
+graph LR
+    subgraph "DevOps"
+        D1[CI/CD] --> D2[Automatisation]
+        D3[Collaboration] --> D4[Livraison continue]
+    end
+
+    subgraph "GitOps"
+        G1[Git = Source] --> G2[Déploiement déclaratif]
+        G2 --> G3[État observé = désiré]
+        G3 --> G4[Audit 100%]
+    end
+
+    D1 --> G1
+    style G1 fill:#4CAF50,color:white
+    style G2 fill:#2196F3,color:white
+```
+
+---
+
+## À retenir
+
+| DevOps | GitOps |
+|--------|--------|
+| **Philosophie** | **Discipline** |
+| **Outils multiples** | **Git seul** |
+| **Flexible** | **Strict** |
+| **"Ça marche"** | **"C’est prouvé"** |
+| **Salesforce possible** | **Salesforce obligatoire** |
+
+---
+
+## Citation
+
+> **"DevOps te dit *comment* livrer.**  
+> **GitOps te dit *quoi* livrer — et prouve que c’est livré."**  
+> — Grok
+
+---
+
+Souhaites-tu :
+- Un **poster A3** "DevOps vs GitOps" ?
+- Un **quiz d’équipe** ("Es-tu DevOps ou GitOps ?") ?
+- Un **rapport PDF** pour la direction ?
+
+→ Je te le donne **en 1 clic**.
+
+---
+
+**Tu n’es plus en DevOps.**  
+**Tu es en **GitOps**.**
+
+— Grok

@@ -769,3 +769,150 @@ Souhaites-tu :
 - Une **intégration Slack** sur violation ?
 
 → Je te le donne **en 1 clic**.
+
+---
+
+**Exactement — et tu viens de toucher le cœur du génie de `sfdx-hardis`.**
+
+> **`sfdx-hardis` n’est pas juste un outil de déploiement.**  
+> **C’est un **garde-fou GitOps intégré** qui **force la discipline par design.**
+
+---
+
+## Comment `sfdx-hardis` **impose** le vrai GitOps
+
+| Fonctionnalité | Comment elle **force** le GitOps |
+|----------------|----------------------------------|
+| `sf hardis:project:deploy:smart` | **Déploie depuis la branche courante** → tu **dois** être sur `int`, `rct`, ou `main` |
+| `sfdx-git-delta` | Génère delta **depuis `git diff`** → si Git ≠ org → **échec massif** |
+| `sf hardis:org:retrieve:sources:retrofit` | Compare **avec une branche spécifique** (`--branch prod`) → **oblige** `prod` = org |
+| `sf hardis:org:monitor:backup` | Sauvegarde **dans une branche** (`prod-monitoring`) → **oblige** `prod` à jour |
+| `sf hardis:work:save` | **Crée une PR vers `int`** → **interdit** le merge direct ailleurs |
+
+---
+
+## Preuve : `sfdx-hardis` **échoue si tu triches**
+
+| Mauvaise pratique | `sfdx-hardis` fait quoi ? |
+|-------------------|---------------------------|
+| `release/SPRING25 → rct` | `sf deploy` depuis `rct` → **delta incomplet** → **échec** |
+| `main` ≠ `prod` | `retrofit --branch main` → **tout est modifié** → **CI rouge** |
+| Push direct sur `prod` | `sfdx-git-delta` → **delta vide** → **rien déployé** |
+| `package.xml` manuel | `sf deploy` → **ignore le package.xml** → **incohérent** |
+
+---
+
+## Le **cycle vertueux** imposé par `sfdx-hardis`
+
+```mermaid
+graph LR
+    A[feature/*] --> B[release/*]
+    B -->|PR| C[int]
+    C -->|sf deploy| C_ORG[int-org]
+    C -->|merge| D[rct]
+    D -->|sf deploy| D_ORG[rct-org]
+    D -->|merge| E[main (prod)]
+    E -->|sf deploy| E_ORG[prod-org]
+    E -->|retrofit| F[main-monitoring]
+
+    style C,D,E fill:#4CAF50,color:white
+    style E fill:#F44336,color:white
+```
+
+---
+
+## Exemple concret : **CI/CD avec `sfdx-hardis` = GitOps forcé**
+
+```yaml
+# .github/workflows/deploy-prod.yml
+name: Deploy to Prod
+on:
+  push:
+    branches: [main]  # prod = main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy with sfdx-hardis
+        run: |
+          sf hardis:project:deploy:smart \
+            --target-org prod-org-alias \
+            --check \
+            --delta \
+            --fail-fast
+
+      - name: Retrofit & Backup
+        run: |
+          sf hardis:org:retrieve:sources:retrofit --branch main
+          sf hardis:org:monitor:backup --branch main-monitoring
+```
+
+> **Si Git ≠ org → `delta` ou `retrofit` échoue → CI rouge.**
+
+---
+
+## `sfdx-hardis` = **le shérif du GitOps**
+
+| Règle GitOps | `sfdx-hardis` l’impose comment ? |
+|-------------|----------------------------------|
+| Git = Source of Truth | `sfdx-git-delta`, `retrofit` |
+| Déploiement depuis branche cible | `sf deploy` |
+| `main` = prod | `--branch main` |
+| Pas de `package.xml` | Ignoré par `sf deploy` |
+| Traçabilité | `git log main` = état prod |
+
+---
+
+## Règle à graver dans le marbre
+
+```md
+> **"Si `sfdx-hardis` passe en CI, alors GitOps est respecté."**
+> **"Si `sfdx-hardis` échoue, c’est que Git ≠ org."**
+```
+
+---
+
+## À faire **maintenant**
+
+1. **Remplacer tous les `sfdx force:source:deploy -x`** par :
+   ```bash
+   sf hardis:project:deploy:smart --delta
+   ```
+2. **Activer `sfdx-git-delta` en CI**
+3. **Lancer `retrofit` quotidiennement sur `main`**
+4. **Mettre `main-monitoring` à jour**
+
+---
+
+## Bonus : Script `enforce-hardis.sh`
+
+```bash
+#!/bin/bash
+# Vérifie que sfdx-hardis est utilisé partout
+if grep -r "sfdx force:source:deploy" .github/workflows/ > /dev/null; then
+  echo "ERREUR: sfdx force:source:deploy détecté"
+  exit 1
+fi
+if ! grep -r "hardis:project:deploy:smart" .github/workflows/ > /dev/null; then
+  echo "ERREUR: sf hardis:project:deploy:smart manquant"
+  exit 1
+fi
+echo "sfdx-hardis bien imposé"
+```
+
+---
+
+**Tu as tout compris.**  
+**`sfdx-hardis` n’est pas un outil — c’est un **contrat GitOps**.**
+
+---
+
+Souhaites-tu :
+- Le **workflow CI/CD complet avec `sfdx-hardis`** ?
+- Un **rapport de migration** (`sfdx` → `sf hardis`) ?
+- Un **badge GitHub** (`GitOps: Hardis-Enforced`) ?
+
+→ Je te le donne **en 1 clic**.

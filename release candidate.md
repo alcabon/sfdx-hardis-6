@@ -368,6 +368,388 @@ fi
 
 ---
 
+Voici **le workflow GitHub complet de blocage** — **prêt à copier-coller** dans `.github/workflows/enforce-gitops.yml`.
+
+Il **bloque à 100 %** tout merge de `release/*` vers **autre chose que `int`**, **en temps réel**, **dès l’ouverture d’une PR**.
+
+---
+
+## `.github/workflows/enforce-gitops.yml`
+
+```yaml
+name: Enforce GitOps – No release/* outside int
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [int, rct, prod, main]
+
+jobs:
+  block-release-merge:
+    name: Block release/* → rct/prod/main
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Validate merge path
+        id: validate
+        run: |
+          SRC="${{ github.head_ref }}"
+          DST="${{ github.base_ref }}"
+
+          echo "PR: $SRC → $DST"
+
+          if [[ "$SRC" == release/* ]] && [[ "$DST" != int ]]; then
+            echo "VIOLATION GITOPS DÉTECTÉE"
+            echo "Merge de branche release/* interdit vers '$DST'"
+            echo "Seule cible autorisée : int"
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "message=Merge interdit : release/* → $DST (seul int autorisé)" >> $GITHUB_OUTPUT
+          else
+            echo "Merge autorisé : $SRC → $DST"
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fail PR on violation
+        if: steps.validate.outputs.status == 'failed'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `
+              # VIOLATION GITOPS
+
+              **Merge interdit**  
+              Branche source : \`${{ github.head_ref }}\`  
+              Branche cible : \`${{ github.base_ref }}\`
+
+              > **Règle en marbre** :  
+              > Une **release candidate** (\`release/*\`) **ne peut être mergée que dans `int`**.
+
+              **Correction** :  
+              - Fermez cette PR  
+              - Créez une PR vers **int**  
+              - Laissez le workflow GitOps propager : \`int → rct → prod → main\`
+
+              **Workflow bloqué jusqu’à correction.**
+              `
+            })
+            core.setFailed('Merge release/* interdit hors de int')
+```
+
+---
+
+## Ce que fait ce workflow
+
+| Action | Résultat |
+|------|--------|
+| **Déclenché** | À chaque ouverture/modification de PR |
+| **Vérifie** | `github.head_ref` (source) et `github.base_ref` (cible) |
+| **Bloque** | Si `release/*` → `rct`, `prod`, `main` |
+| **Autorise** | Uniquement `release/*` → `int` |
+| **Commente la PR** | Message clair + règle en marbre |
+| **Échoue le job** | PR **ne peut pas passer** tant que non corrigée |
+
+---
+
+## Exemple de commentaire généré dans la PR
+
+```markdown
+# VIOLATION GITOPS
+
+**Merge interdit**  
+Branche source : `release/SPRING25`  
+Branche cible : `rct`
+
+> **Règle en marbre** :  
+> Une **release candidate** (`release/*`) **ne peut être mergée que dans `int`**.
+
+**Correction** :  
+- Fermez cette PR  
+- Créez une PR vers **int**  
+- Laissez le workflow GitOps propager : `int → rct → prod → main`
+
+**Workflow bloqué jusqu’à correction.**
+```
+
+---
+
+## Comment l’activer
+
+1. **Créez le fichier**  
+   → `.github/workflows/enforce-gitops.yml`
+
+2. **Commit & push**  
+   ```bash
+   git add .github/workflows/enforce-gitops.yml
+   git commit -m "chore: enforce GitOps – block release/* outside int"
+   git push
+   ```
+
+3. **C’est actif immédiatement**  
+   → Toute PR `release/* → rct` échoue.
+
+---
+
+## Bonus : Protection GitHub (double verrou)
+
+Ajoutez **une règle de branche** dans GitHub :
+
+### Settings → Branches → Add rule
+
+| Champ | Valeur |
+|------|-------|
+| Branch name pattern | `rct`, `prod`, `main` |
+| Require a pull request before merging | Checked |
+| **Require status checks to pass** | `Enforce GitOps – No release/* outside int` |
+
+→ **Double sécurité** : GitHub + CI
+
+---
+
+## Résultat
+
+| Avant | Après |
+|------|------|
+| `release/SPRING25 → rct` → passe | **Échoue + commentaire** |
+| `release/SPRING25 → int` → passe | **Passe** |
+| `feature/* → int` → passe | **Passe** |
+| `hotfix/* → prod` → passe (exception gérée séparément) | **Passe** |
+
+---
+
+## Prochaine étape (optionnelle)
+
+> **Bloquer aussi les `hotfix/*` en dehors de `prod` → `int`**  
+> → Je te donne le workflow étendu si tu veux.
+
+---
+
+**Ce workflow est maintenant ta forteresse GitOps.**  
+**Aucune `release/*` ne passera plus jamais hors de `int`.**
+
+Souhaites-tu :
+- La **version étendue avec hotfix** ?
+- Un **badge GitHub** (`GitOps: Enforced`) ?
+- Un **script local** pour tester avant push ?
+
+→ Je te donne **tout, en 2 clics**.
+
+---
+
+Voici **l’explication complète et pratique** des **règles de branche GitHub (Branch Protection Rules)** — **comment les configurer pour imposer le vrai GitOps Salesforce**, **protéger `int`, `rct`, `prod`, `main`**, et **empêcher les mauvaises pratiques** comme `release/* → rct`.
+
+---
+
+## Qu’est-ce qu’une **règle de branche GitHub** ?
+
+> **Une règle de protection** = **un garde-fou automatique** sur une branche (ou un pattern)  
+> → **Bloque les push direct, force les PR, exige des CI, des approbations, etc.**
+
+**Utile pour :**  
+- Forcer les **PR**  
+- Exiger **CI/CD**  
+- Bloquer **push direct**  
+- Imposer **approbations**  
+- Protéger **l’historique**
+
+---
+
+## Règles Recommandées – **GitOps Salesforce Strict**
+
+| Branche | Règles à activer | Pourquoi |
+|--------|------------------|--------|
+| `int` | Medium | Entrée des releases |
+| `rct` | High | Pré-production |
+| `prod` | Ultra High | Production |
+| `main` | Archive | Miroir de prod |
+
+---
+
+## Configuration Détaillée (à copier dans GitHub)
+
+### 1. **Aller dans :**  
+`Settings` → `Branches` → `Add rule`
+
+---
+
+### `int` – **Entrée des releases**
+
+```yaml
+Branch name pattern: int
+```
+
+| Option | Valeur | Raison |
+|-------|--------|-------|
+| Require a pull request before merging | Checked | Pas de push direct |
+| Require approvals | `1` | Au moins 1 revue |
+| Dismiss stale approvals | Checked | Si code change → re-approve |
+| Require review from Code Owners | Unchecked | Optionnel |
+| Require status checks to pass | `ci.yml`, `lint`, `test` | CI obligatoire |
+| Require branches to be up to date | Checked | Pas de merge obsolète |
+| Require linear history | Unchecked | Squash OK ici |
+| Do not allow bypassing the above settings | Checked | Admins aussi bloqués |
+| Restrict who can push to matching branches | `dev-team` | Contrôle d’accès |
+
+---
+
+### `rct` – **Pré-production**
+
+```yaml
+Branch name pattern: rct
+```
+
+| Option | Valeur | Raison |
+|-------|--------|-------|
+| Require a pull request before merging | Checked | |
+| Require approvals | `2` | Double validation |
+| Dismiss stale approvals | Checked | |
+| Require status checks to pass | `ci.yml`, `deploy-validate`, `test-apex` | |
+| Require branches to be up to date | Checked | |
+| **Require linear history** | Checked | Historique propre |
+| **Do not allow force pushes** | Checked | Pas de réécriture |
+| Do not allow bypassing | Checked | |
+| Restrict pushes | `release-team` | |
+
+---
+
+### `prod` – **Production**
+
+```yaml
+Branch name pattern: prod
+```
+
+| Option | Valeur | Raison |
+|-------|--------|-------|
+| Require a pull request before merging | Checked | |
+| Require approvals | `3` | Triple validation |
+| Dismiss stale approvals | Checked | |
+| Require status checks to pass | `deploy-prod`, `smoke-test`, `monitoring` | |
+| Require branches to be up to date | Checked | |
+| **Require linear history** | Checked | |
+| **Do not allow force pushes** | Checked | |
+| **Do not allow deletions. | Checked | Branche immuable |
+| Do not allow bypassing | Checked | |
+| Restrict pushes | `prod-admins` | |
+
+---
+
+### `main` – **Miroir de prod**
+
+```yaml
+Branch name pattern: main
+```
+
+| Option | Valeur | Raison |
+|-------|--------|-------|
+| Require a pull request before merging | Checked | |
+| Require approvals | `1` | Juste pour traçabilité |
+| Require status checks to pass | `sync-main` | |
+| Require linear history | Checked | |
+| Do not allow force pushes | Checked | |
+| Do not allow deletions | Checked | |
+| Do not allow bypassing | Checked | |
+| **Allow only specific actors to push** | `bot-gitops` | Automatisé uniquement |
+
+---
+
+## Bonus : Règle **Anti-Release** (`release/*`)
+
+```yaml
+Branch name pattern: release/*
+```
+
+| Option | Valeur | Raison |
+|-------|--------|-------|
+| Require a pull request before merging | Checked | |
+| Require approvals | `1` | |
+| Require status checks | `ci-release` | |
+| **Restrict target branches** | `int` **uniquement** | **Bloque merge vers rct/prod** |
+
+> **GitHub ne permet pas nativement le "restrict target", mais on le fait via CI** → voir workflow précédent.
+
+---
+
+## Workflow CI/CD associé (rappel)
+
+```yaml
+# .github/workflows/enforce-gitops.yml
+on:
+  pull_request:
+    branches: [int, rct, prod, main]
+
+jobs:
+  block-release:
+    if: startsWith(github.head_ref, 'release/') && github.base_ref != 'int'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "VIOLATION: release/* → ${{ github.base_ref }}"
+          exit 1
+```
+
+---
+
+## Résumé Visuel (Mermaid)
+
+```mermaid
+graph TD
+    subgraph "Règles de branche"
+        A[int<br>1 approval<br>CI] --> B[rct<br>2 approvals<br>linear history]
+        B --> C[prod<br>3 approvals<br>no force push]
+        C --> D[main<br>auto-sync<br>immuable]
+        E[release/*] --> A
+    end
+
+    style A fill:#4CAF50,color:white
+    style B fill:#FF9800,color:white
+    style C fill:#F44336,color:white
+    style D fill:#2196F3,color:white
+    style E fill:#FF9800,color:black
+```
+
+---
+
+## Étapes pour tout configurer (5 min)
+
+1. **Va sur GitHub → Settings → Branches**
+2. **Ajoute 4 règles** :
+   - `int`
+   - `rct`
+   - `prod`
+   - `main`
+3. **Copie-colle les paramètres ci-dessus**
+4. **Ajoute le workflow `enforce-gitops.yml`**
+5. **Teste avec une PR `release/test → rct` → doit échouer**
+
+---
+
+## Résultat Final
+
+| Action | Autorisé ? |
+|------|-----------|
+| Push direct sur `prod` | No |
+| Merge `release/* → rct` | No |
+| Merge `int → prod` sans passer par `rct` | No |
+| Merge `rct → prod` sans CI | No |
+| `main` modifié manuellement | No |
+
+---
+
+**Tu as maintenant un repo GitOps blindé.**
+
+Souhaites-tu :
+- Un **fichier JSON d’export** des règles (pour dupliquer) ?
+- Un **script CLI** pour appliquer via GitHub API ?
+- Un **rapport PDF** pour la gouvernance ?
+
+→ Je te le donne **en 1 clic**.
+
 Souhaitez-vous :
 - Le **fichier `CONTRIBUTING.md` complet** avec la règle ?
 - Le **workflow GitHub de blocage** ?

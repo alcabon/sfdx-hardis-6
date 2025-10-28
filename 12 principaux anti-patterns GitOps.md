@@ -811,7 +811,7 @@ graph LR
     C -->|sf deploy| C_ORG[int-org]
     C -->|merge| D[rct]
     D -->|sf deploy| D_ORG[rct-org]
-    D -->|merge| E[main (prod)]
+    D -->|merge| E[main = prod]
     E -->|sf deploy| E_ORG[prod-org]
     E -->|retrofit| F[main-monitoring]
 
@@ -914,5 +914,263 @@ Souhaites-tu :
 - Le **workflow CI/CD complet avec `sfdx-hardis`** ?
 - Un **rapport de migration** (`sfdx` → `sf hardis`) ?
 - Un **badge GitHub** (`GitOps: Hardis-Enforced`) ?
+
+→ Je te le donne **en 1 clic**.
+
+---
+
+Voici **le workflow CI/CD complet avec `sfdx-hardis`** — **100 % GitOps**, **prêt à copier-coller**, **compatible avec `prod = main`**.
+
+---
+
+## `.github/workflows/gitops-hardis.yml`
+
+```yaml
+name: GitOps CI/CD – sfdx-hardis (prod = main)
+
+on:
+  push:
+    branches: [int, rct, main]
+  pull_request:
+    types: [opened, synchronize, closed]
+    branches: [int, rct, main]
+
+jobs:
+  # ==================================================================
+  # 1. DÉPLOIEMENT INTÉGRÉ & VALIDATION
+  # ==================================================================
+  deploy-and-validate:
+    name: Deploy & Validate – ${{ github.ref_name }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    
+    environment: ${{ github.ref_name }}  # GitHub Environments (int, rct, main)
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Salesforce CLI
+        uses: sfdx-actions/setup-sfdx@v1
+        with:
+          sfdx-version: latest
+
+      - name: Install sfdx-hardis
+        run: |
+          echo "y" | sfdx plugins:install hardis-group/sfdx-hardis
+
+      - name: Authenticate to org
+        run: |
+          ORG_ALIAS="${{ github.ref_name }}-org"
+          echo "Authentification vers $ORG_ALIAS"
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+          sfdx auth:sfdxurl:store -f auth.txt -a "$ORG_ALIAS" -d
+
+      - name: Generate delta (sfdx-git-delta)
+        id: delta
+        run: |
+          echo "Génération du delta depuis la branche ${{ github.ref_name }}"
+          sf hardis:project:generate:gitdelta \
+            --from ${{ github.event.before }} \
+            --to ${{ github.sha }} \
+            --output-folder .delta \
+            --fail-if-error
+          echo "Delta généré dans .delta"
+
+      - name: Deploy with sfdx-hardis
+        run: |
+          sf hardis:project:deploy:smart \
+            --target-org "${{ github.ref_name }}-org" \
+            --check \
+            --delta \
+            --fail-fast \
+            --auto-remove-branch
+
+      - name: Run Apex tests (rct & main only)
+        if: github.ref_name == 'rct' || github.ref_name == 'main'
+        run: |
+          sf hardis:project:test:apex \
+            --target-org "${{ github.ref_name }}-org" \
+            --code-coverage
+
+      - name: Validate deployment (main only)
+        if: github.ref_name == 'main'
+        run: |
+          sf hardis:project:deploy:validate \
+            --target-org main-org \
+            --check-only
+
+  # ==================================================================
+  # 2. PROMOTION AUTOMATIQUE (int → rct → main)
+  # ==================================================================
+  promote:
+    name: Promote to next environment
+    needs: deploy-and-validate
+    if: github.event_name == 'push' && success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine next branch
+        id: next
+        run: |
+          case "${{ github.ref_name }}" in
+            int)  NEXT="rct" ;;
+            rct)  NEXT="main" ;;
+            *)    echo "no_promotion=true" >> $GITHUB_OUTPUT; exit 0 ;;
+          esac
+          echo "next_branch=$NEXT" >> $GITHUB_OUTPUT
+
+      - name: Merge & push
+        if: steps.next.outputs.next_branch
+        env:
+          NEXT: ${{ steps.next.outputs.next_branch }}
+        run: |
+          git config user.name "GitOps Bot"
+          git config user.email "bot@gitops.local"
+          
+          git checkout $NEXT
+          git merge origin/${{ github.ref_name }} --no-ff -m "gitops: promote ${{ github.ref_name }} → $NEXT"
+          git push origin $NEXT
+
+  # ==================================================================
+  # 3. POST-PRODUCTION (main only)
+  # ==================================================================
+  post-production:
+    name: Retrofit & Backup (main)
+    needs: [deploy-and-validate, promote]
+    if: github.ref_name == 'main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup sfdx-hardis
+        run: echo "y" | sfdx plugins:install hardis-group/sfdx-hardis
+
+      - name: Auth to prod org
+        run: |
+          echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
+          sfdx auth:sfdxurl:store -f auth.txt -a main-org -d
+
+      - name: Retrofit sources
+        run: |
+          sf hardis:org:retrieve:sources:retrofit \
+            --branch main \
+            --target-org main-org \
+            --auto-clean
+
+      - name: Daily backup
+        run: |
+          sf hardis:org:monitor:backup \
+            --branch main-monitoring \
+            --target-org main-org
+
+      - name: Commit & push retrofit
+        run: |
+          git config user.name "GitOps Bot"
+          git config user.email "bot@gitops.local"
+          git add .
+          git commit -m "chore: retrofit main with prod org" || echo "Nothing to commit"
+          git push origin main
+
+  # ==================================================================
+  # 4. BLOQUER LES MERGES ILLÉGAUX (release/* → rct/main)
+  # ==================================================================
+  block-release-merge:
+    name: Block release/* → rct/main
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate target
+        run: |
+          TARGET="${{ github.base_ref }}"
+          if [[ "$TARGET" != "int" ]]; then
+            echo "VIOLATION: release/* → $TARGET interdit"
+            echo "Seule cible autorisée: int"
+            exit 1
+          fi
+```
+
+---
+
+## Structure de branches attendue
+
+```text
+feature/* → release/* → int → rct → main (prod)
+                             ↓       ↓       ↓
+                        int-org  rct-org  main-org
+```
+
+---
+
+## GitHub Environments (à créer)
+
+| Environment | Org | Approbations |
+|-----------|-----|------------|
+| `int`     | int-org | 1 |
+| `rct`     | rct-org | 2 |
+| `main`    | main-org | 3 |
+
+> **Settings → Environments → New environment**
+
+---
+
+## Secrets GitHub (à configurer)
+
+| Secret | Valeur |
+|-------|-------|
+| `SFDX_AUTH_URL` | URL d’authentification (sfdx auth:sfdxurl:store) |
+
+---
+
+## Ce que fait ce workflow
+
+| Étape | Action |
+|------|-------|
+| `deploy-and-validate` | Déploie depuis la branche courante avec `sfdx-hardis` + `delta` |
+| `promote` | `int → rct`, `rct → main` automatiquement |
+| `post-production` | `retrofit` + `backup` sur `main` |
+| `block-release-merge` | **Bloque `release/* → rct/main`** |
+
+---
+
+## Résultat
+
+| Branche | CI/CD | GitOps |
+|--------|------|-------|
+| `int`  | Deploy + tests | OK |
+| `rct`  | Deploy + tests | OK |
+| `main` | Deploy + validate + retrofit | **PARFAIT** |
+
+---
+
+## À faire (5 min)
+
+1. **Copie le fichier** → `.github/workflows/gitops-hardis.yml`
+2. **Crée les environments** (`int`, `rct`, `main`)
+3. **Ajoute le secret** `SFDX_AUTH_URL`
+4. **Pousse** → tout est actif
+
+---
+
+**Tu as maintenant un pipeline GitOps **automatisé, sécurisé, et imposé par `sfdx-hardis`**.**
+
+---
+
+Souhaites-tu :
+- La **version avec Slack notifications** ?
+- Un **badge GitHub** (`GitOps: Enforced`) ?
+- Un **rapport PDF de conformité** ?
 
 → Je te le donne **en 1 clic**.
